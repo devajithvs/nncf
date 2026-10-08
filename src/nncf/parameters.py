@@ -82,6 +82,14 @@ class CompressWeightsMode(StrEnum):
         Weights are quantized to a primary precision symmetrically without zero point.
     :param INT2_SYM: Stands for a mixed-precision weights quantization with 2-bit integer as a primary precision.
         Weights are quantized to a primary precision symmetrically without zero point.
+    :param INT1_BALANCED: Stands for a data-free 1-bit weight format with a balanced grid, for weights that already
+        take exactly two values per group. The scale is the group's maximum absolute weight, the codes are 0 and 1,
+        and the zero point is 1/2, so a group of weights `+/-s` is reconstructed exactly:
+        `w = s * (2 * code - 1)`. The zero point cannot be stored as an integer, so it is kept in floating point.
+    :param INT2_BALANCED: Stands for a data-free 2-bit weight format with a balanced grid, for weights that already
+        take exactly three values per group. The scale is the group's maximum absolute weight, the codes are 0, 1 and
+        2, and the zero point is 1, so a group of weights `{-s, 0, +s}` is reconstructed exactly:
+        `w = s * (code - 1)`.
     :param NF4: The the same as INT4_SYM mode, but primary precision is NF4 data type without zero point.
     :param MXFP4: MX-compliant FP4 format with E2M1 values sharing group-level E8M0 scale. The size of group is 32.
     :param MXFP8_E4M3: MX-compliant FP8 format with E4M3 values sharing group-level E8M0 scale. The size of group is 32.
@@ -100,6 +108,8 @@ class CompressWeightsMode(StrEnum):
     INT4_ASYM = "int4_asym"
     INT3_SYM = "int3_sym"
     INT2_SYM = "int2_sym"
+    INT1_BALANCED = "int1_balanced"
+    INT2_BALANCED = "int2_balanced"
     NF4 = "nf4"
     CB4 = "cb4"
     MXFP4 = "mxfp4"

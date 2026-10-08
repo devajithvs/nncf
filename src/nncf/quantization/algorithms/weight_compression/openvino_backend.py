@@ -273,6 +273,27 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
             converted_const = opset.subtract(
                 converted_const, zero_point_const, name=f"{const_node_name}/zero_point/subtract"
             )
+        elif compression_config.is_balanced_mode:
+            # A balanced grid keeps the two ends of the group's range on the two end codes, so the zero point is
+            # (num_codes - 1) / 2: an integer for INT2_BALANCED and 1/2 for INT1_BALANCED, which no integer type can
+            # hold and which is therefore kept in f16.
+            zero_point_dtype = (
+                ov.Type.f16
+                if compression_config.mode == CompressWeightsMode.INT1_BALANCED
+                else DTYPE_MAP[TensorDataType.uint4]
+            )
+            compressed_const = create_ov_const_from_tensor(
+                compressed_weight.tensor, compression_dtype, name=const_node_name
+            )
+            converted_const = opset.convert(compressed_const, ov.Type.f16)
+
+            zero_point_const = create_ov_const_from_tensor(
+                compressed_weight.zero_point, zero_point_dtype, name=f"{const_node_name}/zero_point"
+            )
+            zero_point_const = opset.convert(zero_point_const, ov.Type.f16)
+            converted_const = opset.subtract(
+                converted_const, zero_point_const, name=f"{const_node_name}/zero_point/subtract"
+            )
         else:
             compressed_const = create_ov_const_from_tensor(
                 compressed_weight.tensor, compression_dtype, name=const_node_name

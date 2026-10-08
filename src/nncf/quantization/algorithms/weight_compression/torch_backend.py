@@ -447,6 +447,8 @@ class PTWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
                 CompressWeightsMode.MXFP8_E4M3,
                 CompressWeightsMode.FP8_E4M3,
                 CompressWeightsMode.FP4,
+                CompressWeightsMode.INT1_BALANCED,
+                CompressWeightsMode.INT2_BALANCED,
             ]:
                 msg = f"{compression_config.mode.value} is not supported."
                 raise nncf.ParameterNotSupportedError(msg)

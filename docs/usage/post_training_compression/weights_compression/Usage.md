@@ -56,6 +56,8 @@ NNCF can automatically distribute precision assignments based on quantization se
 |   FP8_E4M3       | E4M3         | FP16       | Per-channel / Group-wise | OpenVINO, ONNX                   | [FP8](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf) |
 |   FP4            | E2M1         | FP16       | Per-channel / Group-wise | OpenVINO                         | [FP4](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf) |
 | NVFP4            | E2M1         | E4M3 per group / FP32 per weight | Group-wise (16)          | OpenVINO              | [NVFP4](https://arxiv.org/abs/2509.25149) |
+| INT1_BALANCED    | UINT1        | FP16       | Per-channel / Group-wise | OpenVINO                         | Data-free 1-bit format with a balanced grid, exact for weights that take two values per group (`w = s * (2 * code - 1)`) |
+| INT2_BALANCED    | UINT2        | FP16       | Per-channel / Group-wise | OpenVINO                         | Data-free 2-bit format with a balanced grid, exact for weights that take three values per group (`w = s * (code - 1)`) |
 
 **Note**: Granularity refers to the scope of elements sharing quantization parameters. "Per-channel" applies different parameters for each output channel, while "Group-wise" divides weights into groups (e.g., group_size=128) that share the same parameters.
 

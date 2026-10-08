@@ -74,6 +74,8 @@ class WeightCompressionConfig:
             CompressWeightsMode.MXFP8_E4M3: 8,
             CompressWeightsMode.INT3_SYM: 3,
             CompressWeightsMode.INT2_SYM: 2,
+            CompressWeightsMode.INT1_BALANCED: 1,
+            CompressWeightsMode.INT2_BALANCED: 2,
         }
 
         try:
@@ -85,6 +87,27 @@ class WeightCompressionConfig:
     @property
     def is_asym_mode(self) -> bool:
         return self.mode in [CompressWeightsMode.INT4_ASYM, CompressWeightsMode.INT8_ASYM]
+
+    @property
+    def is_balanced_mode(self) -> bool:
+        """
+        True if the compression type uses a balanced grid, i.e. a grid whose codes are symmetric around a
+        zero point of (num_codes - 1) / 2 with the scale equal to the group's maximum absolute weight. Such a
+        grid reconstructs weights that already take two (INT1_BALANCED) or three (INT2_BALANCED) values per
+        group exactly, which the integer grids cannot: the symmetric integer grid is asymmetric in range and
+        clips the positive end.
+        """
+        return self.mode in [CompressWeightsMode.INT1_BALANCED, CompressWeightsMode.INT2_BALANCED]
+
+    @property
+    def balanced_num_codes(self) -> int:
+        """
+        Number of codes on the balanced grid: 2 for INT1_BALANCED and 3 for INT2_BALANCED.
+        """
+        if not self.is_balanced_mode:
+            msg = f"{self.mode} does not use a balanced grid"
+            raise InternalError(msg)
+        return 2 if self.mode == CompressWeightsMode.INT1_BALANCED else 3
 
     @property
     def is_integer(self) -> bool:
@@ -132,6 +155,8 @@ class WeightCompressionConfig:
         dtype_per_mode = {
             CompressWeightsMode.INT2_SYM: TensorDataType.int2,
             CompressWeightsMode.INT3_SYM: TensorDataType.int3,
+            CompressWeightsMode.INT1_BALANCED: TensorDataType.uint1,
+            CompressWeightsMode.INT2_BALANCED: TensorDataType.int2,
             CompressWeightsMode.INT4_SYM: TensorDataType.int4,
             CompressWeightsMode.INT4_ASYM: TensorDataType.uint4,
             CompressWeightsMode.INT8_ASYM: TensorDataType.uint8,
