@@ -327,41 +327,27 @@ def calculate_integer_quantization_params(
         )
         return scale, zero_point
 
-    if config.is_balanced_mode:
-        return _calculate_balanced_scale_zero_point(weight, reduction_axes, config)
+    if config.mode == CompressWeightsMode.INT1_SYM:
+        return _calculate_sign_scale(weight, reduction_axes), None
 
     scale = _calculate_signed_scale(weight, reduction_axes, num_bits, config.narrow_range)
     return scale, None
 
 
-def _calculate_balanced_scale_zero_point(
-    weight: Tensor,
-    reduction_axes: ReductionAxes,
-    config: WeightCompressionConfig,
-) -> tuple[Tensor, Tensor]:
+def _calculate_sign_scale(weight: Tensor, reduction_axes: ReductionAxes) -> Tensor:
     """
-    Calculates the scale and zero point of a balanced grid: `num_codes` codes spanning `[-scale * zp, scale *
-    (num_codes - 1 - zp)]` with `zp = (num_codes - 1) / 2`. The scale is the group's maximum absolute weight, so a
-    group whose weights take exactly `num_codes` values at a fixed distance from zero is reconstructed exactly.
+    Calculates the scale of the sign grid: the group's mean absolute weight. For a group whose weights are `+/-s`
+    this is `s`, so the sign grid reconstructs it exactly; for any other group it is the error-minimising scale of
+    sign quantization.
 
     :param weight: Weight array to compress.
-    :param reduction_axes: Axes, along which to reduce (collect) different statistics (e.g. min, max).
-    :param config: Weight compression configuration.
-    :return: Scale and zero point tensors.
+    :param reduction_axes: Axes, along which to reduce (collect) statistics.
+    :return: Scale tensor.
     """
-    num_codes = config.balanced_num_codes
-
-    max_abs = fns.max(fns.abs(weight), axis=reduction_axes, keepdims=True)
-    # The two end codes are the group's extremes: `2 * max_abs / (num_codes - 1)` per code step.
-    scale = max_abs * (2 / (num_codes - 1))
+    scale = fns.mean(fns.abs(weight), axis=reduction_axes, keepdims=True)
 
     eps = fns.finfo(scale).eps
-    scale = fns.where(fns.abs(scale) < eps, eps, scale)
-
-    # An all-zero group is reconstructed as zero from any code, so its zero point only has to be a valid code.
-    zero_point = fns.zeros_like(scale) + (num_codes - 1) / 2
-
-    return scale, zero_point
+    return fns.where(fns.abs(scale) < eps, eps, scale)
 
 
 def get_integer_quantization_error(
@@ -508,12 +494,10 @@ def do_integer_quantization(
     if not config.is_integer:
         msg = "The function supports integer quantization only"
         raise nncf.InternalError(msg)
-    if (config.is_asym_mode or config.is_balanced_mode) and (precomputed_scale is None) != (
-        precomputed_zero_point is None
-    ):
+    if config.is_asym_mode and (precomputed_scale is None) != (precomputed_zero_point is None):
         msg = (
             "If precomputed quantization parameters are provided, both scale and zero point are required "
-            "for asymmetric and balanced quantization."
+            "for asymmetric quantization."
         )
         raise ValueError(msg)
 
@@ -535,8 +519,7 @@ def do_integer_quantization(
         weight = weight.astype(TensorDataType.float32)
 
     scale, zero_point = None, None
-    balanced_or_asym = config.is_asym_mode or config.is_balanced_mode
-    if precomputed_scale is None or (balanced_or_asym and precomputed_zero_point is None):
+    if precomputed_scale is None or (config.is_asym_mode and precomputed_zero_point is None):
         if reduction_axes is None:
             msg = "Reduction axes are required for computing the scale and (zero point) vectors."
             raise ValueError(msg)
@@ -714,17 +697,16 @@ def _calculate_integer_quantized_weight(
     if scale.dtype != TensorDataType.float32:
         scale = scale.astype(TensorDataType.float32)
 
+    if config.mode == CompressWeightsMode.INT1_SYM:
+        # Every weight is +scale or -scale: its code is its sign, and zero counts as positive.
+        ones = fns.ones_like(weight)
+        return fns.where(weight < 0, -ones, ones).astype(TensorDataType.int8)
+
     num_bits = config.num_bits
     asym_quant = config.is_asym_mode
-    if config.is_balanced_mode:
-        # The reference implementation keeps one code per byte; the constant creation packs them.
-        dtype = TensorDataType.uint8
-        level_low = 0
-        level_high = config.balanced_num_codes - 1
-    else:
-        dtype = TensorDataType.uint8 if asym_quant else TensorDataType.int8
-        level_low = 0 if asym_quant else -(2 ** (num_bits - 1)) + int(config.narrow_range)
-        level_high = 2**num_bits - 1 if asym_quant else 2 ** (num_bits - 1) - 1
+    dtype = TensorDataType.uint8 if asym_quant else TensorDataType.int8
+    level_low = 0 if asym_quant else -(2 ** (num_bits - 1)) + int(config.narrow_range)
+    level_high = 2**num_bits - 1 if asym_quant else 2 ** (num_bits - 1) - 1
 
     compressed_weights = weight / scale
     if zero_point is not None:

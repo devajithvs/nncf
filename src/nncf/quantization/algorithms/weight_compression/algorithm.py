@@ -61,7 +61,7 @@ TTensor = TypeVar("TTensor")
 
 INT8_MODES = [CompressWeightsMode.INT8_ASYM, CompressWeightsMode.INT8_SYM]
 NON_INT8_MODES = [mode for mode in CompressWeightsMode if mode not in INT8_MODES]
-BALANCED_MODES = [CompressWeightsMode.INT1_BALANCED, CompressWeightsMode.INT2_BALANCED]
+DATA_FREE_MODES = [CompressWeightsMode.INT1_SYM]
 SUPPORTED_DATA_TYPES = [
     TensorDataType.float16,
     TensorDataType.bfloat16,
@@ -185,9 +185,9 @@ def check_user_compression_configuration(
             msg = f"INT8 modes do not support {', '.join(unsupported_for_int8)} option(s). Set them to None."
             raise nncf.ParameterNotSupportedError(msg)
 
-    if mode in BALANCED_MODES:
-        # The balanced grids are data-free: they recover the scale of weights that are already binary or ternary,
-        # so there is nothing for a data-aware algorithm to fit.
+    if mode in DATA_FREE_MODES:
+        # The sign grid is data-free: its scale is the mean absolute weight, so there is nothing for a data-aware
+        # algorithm to fit.
         data_aware_options = {
             "dataset": dataset,
             "awq": awq,
@@ -195,11 +195,11 @@ def check_user_compression_configuration(
             "gptq": gptq,
             "lora_correction": lora_correction,
         }
-        unsupported_for_balanced = [name for name, value in data_aware_options.items() if value is not None]
-        if unsupported_for_balanced:
+        unsupported_for_data_free = [name for name, value in data_aware_options.items() if value is not None]
+        if unsupported_for_data_free:
             msg = (
                 f"{mode.value} is a data-free format and does not support "
-                f"{', '.join(unsupported_for_balanced)} option(s). Set them to None."
+                f"{', '.join(unsupported_for_data_free)} option(s). Set them to None."
             )
             raise nncf.ParameterNotSupportedError(msg)
 
@@ -352,12 +352,9 @@ class WeightCompression(Algorithm):
                 criteria and the given ratio.
             INT4_ASYM is the same as INT4_SYM mode, but weights are quantized to a primary precision asymmetrically
                 with a typical non-fixed zero point.
-            INT1_BALANCED is a data-free 1-bit format with a balanced grid, for weights that already take exactly
-                two values per group: the scale is the group's maximum absolute weight, the codes are 0 and 1 and
-                the zero point is 1/2, so `w = s * (2 * code - 1)` reconstructs the group exactly.
-            INT2_BALANCED is a data-free 2-bit format with a balanced grid, for weights that already take exactly
-                three values per group: the scale is the group's maximum absolute weight, the codes are 0, 1 and 2
-                and the zero point is 1, so `w = s * (code - 1)` reconstructs the group exactly.
+            INT1_SYM is a data-free 1-bit format with a sign grid and without zero point: each weight is stored as
+                its sign and the scale is the group's mean absolute weight, so `w = s * sign` reconstructs a group of
+                weights `+/-s` exactly.
             NF4 is the same as INT4_SYM mode, but primary precision is NF4 data type without zero point.
             MXFP4 is MX-compliant FP4 with E2M1 values sharing group-level E8M0 scale. The size of group is 32.
             MXFP8_E4M3 is MX-compliant FP8 with E4M3 values sharing group-level E8M0 scale. The size of group is 32.
