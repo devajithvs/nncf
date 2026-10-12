@@ -327,8 +327,27 @@ def calculate_integer_quantization_params(
         )
         return scale, zero_point
 
+    if config.mode == CompressWeightsMode.INT1_SYM:
+        return _calculate_sign_scale(weight, reduction_axes), None
+
     scale = _calculate_signed_scale(weight, reduction_axes, num_bits, config.narrow_range)
     return scale, None
+
+
+def _calculate_sign_scale(weight: Tensor, reduction_axes: ReductionAxes) -> Tensor:
+    """
+    Calculates the scale of the sign grid: the group's mean absolute weight. For a group whose weights are `+/-s`
+    this is `s`, so the sign grid reconstructs it exactly; for any other group it is the error-minimising scale of
+    sign quantization.
+
+    :param weight: Weight array to compress.
+    :param reduction_axes: Axes, along which to reduce (collect) statistics.
+    :return: Scale tensor.
+    """
+    scale = fns.mean(fns.abs(weight), axis=reduction_axes, keepdims=True)
+
+    eps = fns.finfo(scale).eps
+    return fns.where(fns.abs(scale) < eps, eps, scale)
 
 
 def get_integer_quantization_error(
@@ -671,12 +690,17 @@ def _calculate_integer_quantized_weight(
     :param config: Weight compression configuration.
     :param scale: Scale tensor used for quantization.
     :param zero_point: Zero point tensor used for quantization.
-    :return: Quantized weight tensor of uint8 or int8 type.
+    :return: Quantized weight tensor of uint8, int8, uint4, uint2 or uint1 type.
     """
     if weight.dtype != TensorDataType.float32:
         weight = weight.astype(TensorDataType.float32)
     if scale.dtype != TensorDataType.float32:
         scale = scale.astype(TensorDataType.float32)
+
+    if config.mode == CompressWeightsMode.INT1_SYM:
+        # Every weight is +scale or -scale: its code is its sign, and zero counts as positive.
+        ones = fns.ones_like(weight)
+        return fns.where(weight < 0, -ones, ones).astype(TensorDataType.int8)
 
     num_bits = config.num_bits
     asym_quant = config.is_asym_mode

@@ -55,6 +55,7 @@ from nncf.quantization.algorithms.weight_compression.weight_lowering import _cal
 from nncf.quantization.algorithms.weight_compression.weight_lowering import _calculate_normalized_weight
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_float_dequantization
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_float_quantization
+from nncf.quantization.algorithms.weight_compression.weight_lowering import do_integer_dequantization
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_integer_quantization
 from nncf.quantization.algorithms.weight_compression.weight_lowering import get_integer_quantization_error
 from nncf.quantization.algorithms.weight_compression.weight_lowering import reshape_weight_for_grouped_quantization
@@ -1512,6 +1513,116 @@ def test_int_compressed_weighs_range(mode, data):
     compressed_weight = do_integer_quantization(w, config, -1)
 
     assert np.allclose(np.abs(compressed_weight.tensor.data), np.abs(w.data))
+
+
+def _build_matmul_model(weight: np.ndarray) -> ov.Model:
+    """
+    A model whose only weight is the given one.
+    """
+    input_node = opset.parameter([1, weight.shape[1]], name="Input")
+    matmul = opset.matmul(
+        input_node, opset.constant(weight, name="Weights"), transpose_a=False, transpose_b=True, name="MatMul"
+    )
+    return ov.Model([opset.result(matmul, name="Result")], [input_node])
+
+
+@pytest.mark.parametrize("data", ([-2.0, 2.0, 2.0, -2.0], [0.5, -0.5, -0.5, 0.5]))
+def test_sign_grid_is_exact_on_two_level_weights(data):
+    """
+    The sign grid recovers a group whose weights are `+/-s`: the codes are the signs and the scale is the group's
+    mean absolute weight, which is `s` (ADR-0014). The codes are the signs themselves, with no zero point.
+    """
+    data = np.array(data).astype(np.float32)
+    w = Tensor(data)
+
+    config = WeightCompressionConfig(mode=CompressWeightsMode.INT1_SYM)
+    compressed_weight = do_integer_quantization(w, config, -1)
+    decompressed_weight = do_integer_dequantization(compressed_weight)
+
+    assert np.array_equal(decompressed_weight.data, data)
+    assert np.array_equal(np.sort(np.unique(compressed_weight.tensor.data)), np.array([-1, 1], np.int8))
+    assert compressed_weight.zero_point is None
+    assert np.array_equal(compressed_weight.scale.data, np.array([np.abs(data).mean()], np.float32))
+
+
+def test_sign_compressed_weight_subgraph():
+    """
+    The sign grid is emitted as an `s1` constant of one bit per weight, converted and multiplied by the scale. It has
+    no zero point, and the compressed model reproduces the uncompressed one exactly on the CPU.
+    """
+    group_size, num_groups = 8, 2
+    hidden_dim = group_size * num_groups
+    scales = np.array([0.5, 0.25], np.float32)
+    signs = np.resize(np.array([1.0, -1.0, -1.0, 1.0], np.float32), hidden_dim)
+    row = signs * np.repeat(scales, group_size)
+    weight = np.tile(row, (hidden_dim, 1))
+
+    model = _build_matmul_model(weight)
+    input_data = np.random.default_rng(0).standard_normal((1, hidden_dim)).astype(np.float32)
+    reference = ov.Core().compile_model(model, "CPU")({0: input_data})[0]
+
+    compressed_model = compress_weights(
+        model, mode=CompressWeightsMode.INT1_SYM, group_size=group_size, ratio=1.0, all_layers=True
+    )
+    result = ov.Core().compile_model(compressed_model, "CPU")({0: input_data})[0]
+    assert np.array_equal(result, reference)
+
+    constants = {
+        op.get_friendly_name(): op for op in compressed_model.get_ordered_ops() if op.get_type_name() == "Constant"
+    }
+    weight_const = constants["Weights"]
+    assert weight_const.get_element_type() == ov.Type.s1
+    assert weight_const.get_byte_size() == weight.size // 8
+    assert "Weights/zero_point" not in constants
+
+
+def test_int2_sym_narrow_range_is_emitted_as_signed_i2_without_zero_point():
+    """
+    `INT2_SYM` with the narrow-range option stores codes `{-1, 0, +1}` as a signed `i2` constant with no zero point
+    (ADR-0014). A group `{-d, 0, +d}` is reconstructed exactly.
+    """
+    group_size, num_groups = 8, 2
+    hidden_dim = group_size * num_groups
+    scales = np.array([0.5, 0.25], np.float32)
+    codes_row = np.resize(np.array([-1.0, 0.0, 1.0], np.float32), hidden_dim)
+    row = codes_row * np.repeat(scales, group_size)
+    weight = np.tile(row, (hidden_dim, 1))
+
+    model = _build_matmul_model(weight)
+    input_data = np.random.default_rng(0).standard_normal((1, hidden_dim)).astype(np.float32)
+    reference = ov.Core().compile_model(model, "CPU")({0: input_data})[0]
+
+    compressed_model = compress_weights(
+        model,
+        mode=CompressWeightsMode.INT2_SYM,
+        group_size=group_size,
+        ratio=1.0,
+        all_layers=True,
+        advanced_parameters=AdvancedCompressionParameters(narrow_range=True),
+    )
+    result = ov.Core().compile_model(compressed_model, "CPU")({0: input_data})[0]
+    assert np.array_equal(result, reference)
+
+    constants = {
+        op.get_friendly_name(): op for op in compressed_model.get_ordered_ops() if op.get_type_name() == "Constant"
+    }
+    assert constants["Weights"].get_element_type() == ov.Type.i2
+    assert "Weights/zero_point" not in constants
+
+
+@pytest.mark.parametrize(
+    "params",
+    (
+        {"dataset": "anything"},
+        {"awq": True},
+        {"scale_estimation": True},
+        {"gptq": True},
+        {"lora_correction": True},
+    ),
+)
+def test_raise_error_with_data_aware_params_for_sign_mode(params):
+    with pytest.raises(nncf.ParameterNotSupportedError):
+        compress_weights(ov.Model([], []), mode=CompressWeightsMode.INT1_SYM, **params)
 
 
 FP4_REF = {
