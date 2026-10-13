@@ -290,7 +290,6 @@ class GPTQ:
         block_compression_config = WeightCompressionConfig(
             mode=wc_params.compression_config.mode,
             codebook_values=wc_params.compression_config.codebook_values,
-            narrow_range=wc_params.compression_config.narrow_range,
         )
 
         damp = self._damp_percent * fns.mean(fns.diag(hessian))

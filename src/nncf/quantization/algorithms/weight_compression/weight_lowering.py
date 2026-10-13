@@ -333,7 +333,7 @@ def calculate_integer_quantization_params(
     if config.mse_scale:
         return _calculate_mse_scale(weight, reduction_axes, num_bits), None
 
-    scale = _calculate_signed_scale(weight, reduction_axes, num_bits, config.narrow_range)
+    scale = _calculate_signed_scale(weight, reduction_axes, num_bits)
     return scale, None
 
 
@@ -722,19 +722,16 @@ def _calculate_normalized_weight(weight: Tensor, scale: Tensor) -> Tensor:
     return weight / scale
 
 
-def _calculate_signed_scale(
-    weight: Tensor, reduction_axes: ReductionAxes, num_bits: int = 4, narrow_range: bool = False
-) -> Tensor:
+def _calculate_signed_scale(weight: Tensor, reduction_axes: ReductionAxes, num_bits: int = 4) -> Tensor:
     """
     Calculates the signed scale for symmetric quantization.
 
     :param weight: Weight array to compress.
     :param reduction_axes: Axes along which to reduce (collect) different statistics (e.g., min, max).
     :param num_bits: number of bits in compression.
-    :param narrow_range: Whether the grid is [-(2^(b-1) - 1), 2^(b-1) - 1] instead of [-2^(b-1), 2^(b-1) - 1].
     :return: Scale tensor.
     """
-    factor = 2 ** (num_bits - 1) - 1 if narrow_range else 2 ** (num_bits - 1)
+    factor = 2 ** (num_bits - 1)
 
     w_abs_min = fns.abs(fns.min(weight, axis=reduction_axes, keepdims=True))
     w_max = fns.max(weight, axis=reduction_axes, keepdims=True)
@@ -776,7 +773,7 @@ def _calculate_integer_quantized_weight(
     num_bits = config.num_bits
     asym_quant = config.is_asym_mode
     dtype = TensorDataType.uint8 if asym_quant else TensorDataType.int8
-    level_low = 0 if asym_quant else -(2 ** (num_bits - 1)) + int(config.narrow_range)
+    level_low = 0 if asym_quant else -(2 ** (num_bits - 1))
     level_high = 2**num_bits - 1 if asym_quant else 2 ** (num_bits - 1) - 1
 
     compressed_weights = weight / scale

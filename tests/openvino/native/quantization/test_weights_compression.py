@@ -1576,10 +1576,10 @@ def test_sign_compressed_weight_subgraph():
     assert "Weights/zero_point" not in constants
 
 
-def test_int2_sym_narrow_range_is_emitted_as_signed_i2_without_zero_point():
+def test_int2_sym_is_emitted_as_signed_i2_without_zero_point():
     """
-    `INT2_SYM` with the narrow-range option stores codes `{-1, 0, +1}` as a signed `i2` constant with no zero point
-    (ADR-0014). A group `{-d, 0, +d}` is reconstructed exactly.
+    `INT2_SYM` stores codes `{-2 ... +1}` as a signed `i2` constant with no zero point (ADR-0014), with the scale
+    from the data-free least-error search (ADR-0017). A group `{-d, 0, +d}` is reconstructed exactly.
     """
     group_size, num_groups = 8, 2
     hidden_dim = group_size * num_groups
@@ -1598,7 +1598,7 @@ def test_int2_sym_narrow_range_is_emitted_as_signed_i2_without_zero_point():
         group_size=group_size,
         ratio=1.0,
         all_layers=True,
-        advanced_parameters=AdvancedCompressionParameters(narrow_range=True),
+        advanced_parameters=AdvancedCompressionParameters(mse_scale=True),
     )
     result = ov.Core().compile_model(compressed_model, "CPU")({0: input_data})[0]
     assert np.array_equal(result, reference)

@@ -112,15 +112,6 @@ def test_mse_scale_is_never_worse_than_the_full_range_rule(mode):
     assert _stored_mse(weights, searched_codes, searched_scale) < _stored_mse(weights, full_codes, full_scale)
 
 
-@pytest.mark.parametrize("mode", [CompressWeightsMode.INT2_SYM, CompressWeightsMode.INT4_SYM])
-def test_mse_scale_is_not_worse_than_the_narrow_range_rule(mode):
-    rng = np.random.default_rng(3)
-    weight = rng.standard_normal((64, 256)).astype(np.float32)
-    searched_codes, searched_scale = _compress(weight, WeightCompressionConfig(mode=mode, mse_scale=True))
-    narrow_codes, narrow_scale = _compress(weight, WeightCompressionConfig(mode=mode, narrow_range=True))
-    assert _stored_mse(weight, searched_codes, searched_scale) <= _stored_mse(weight, narrow_codes, narrow_scale)
-
-
 @pytest.mark.parametrize(
     "mode", [CompressWeightsMode.INT2_SYM, CompressWeightsMode.INT4_SYM, CompressWeightsMode.INT8_SYM]
 )
@@ -146,11 +137,6 @@ def test_mse_scale_never_exceeds_the_group_s_largest_magnitude(mode):
 def test_mse_scale_is_refused_for_other_modes(mode):
     with pytest.raises(ValidationError):
         WeightCompressionConfig(mode=mode, mse_scale=True)
-
-
-def test_mse_scale_and_narrow_range_are_two_choices_of_one_thing():
-    with pytest.raises(ValidationError):
-        WeightCompressionConfig(mode=CompressWeightsMode.INT4_SYM, mse_scale=True, narrow_range=True)
 
 
 def test_mse_scale_default_is_off():

@@ -432,15 +432,9 @@ class AdvancedCompressionParameters:
     :type codebook: TTensor
     :param adaptive_codebook_params: Advanced parameters for adaptive codebook estimation.
     :type adaptive_codebook_params: AdvancedAdaptiveCodebookParameters
-    :param narrow_range: Whether the symmetric integer modes (INT2_SYM, INT3_SYM, INT4_SYM, INT8_SYM) use the
-        narrow range [-(2^(b-1) - 1), 2^(b-1) - 1] with scale max|w| / (2^(b-1) - 1) for the primary precision,
-        instead of the default full range [-2^(b-1), 2^(b-1) - 1] with scale max|w| / 2^(b-1). The default maps
-        the largest-magnitude weight of a group to -2^(b-1), so a group whose weights are symmetric in magnitude
-        (e.g. +-d) has its positive end clipped; the narrow range represents such a group exactly. Defaults to False.
-    :type narrow_range: bool
     :param mse_scale: Whether the symmetric integer modes (INT2_SYM, INT3_SYM, INT4_SYM, INT8_SYM) choose each
         group's scale by a data-free mean-squared-error search over candidate scales computed from the group's own
-        weights, instead of the closed-form `max|w| / 2^(b-1)` (or `max|w| / (2^(b-1) - 1)`) rules. The search uses
+        weights, instead of the closed-form `max|w| / 2^(b-1)`. The search uses
         the full-range grid `[-2^(b-1), 2^(b-1) - 1]` and its candidates include `max|w|` itself, so a group of two
         levels (e.g. +-d) is represented exactly while a group with a spread of magnitudes still uses every level.
         No calibration data is used: only the weights being compressed. Defaults to False.
@@ -459,7 +453,6 @@ class AdvancedCompressionParameters:
     lora_correction_params: AdvancedLoraCorrectionParameters = field(default_factory=AdvancedLoraCorrectionParameters)
     backend_params: dict[str, Any] = field(default_factory=dict)
     codebook: TTensor | None = None
-    narrow_range: bool = False
     mse_scale: bool = False
     adaptive_codebook_params: AdvancedAdaptiveCodebookParameters = field(
         default_factory=AdvancedAdaptiveCodebookParameters

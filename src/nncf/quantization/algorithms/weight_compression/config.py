@@ -34,8 +34,6 @@ class WeightCompressionConfig:
     :param codebook_values: Optional codebook values for CODEBOOK compression mode.
         Must be nncf.tensor.Tensor which wraps numpy array or ov tensor. Storing ov tensor is useful for having
         destination data type information available.
-    :param narrow_range: Whether a symmetric integer mode uses the narrow range [-(2^(b-1) - 1), 2^(b-1) - 1] with
-        scale max|w| / (2^(b-1) - 1) instead of the full range with scale max|w| / 2^(b-1). Defaults to False.
     :param mse_scale: Whether a symmetric integer mode chooses each group's scale by a data-free mean-squared-error
         search over candidate scales on the group's own weights, instead of the closed-form max|w| rules. The
         search is over the full-range grid [-2^(b-1), 2^(b-1) - 1] and its candidates include max|w| itself, so a
@@ -45,21 +43,14 @@ class WeightCompressionConfig:
     mode: CompressWeightsMode = CompressWeightsMode.INT8_ASYM
     group_size: int = -1
     codebook_values: Tensor | None = None
-    narrow_range: bool = False
     mse_scale: bool = False
 
     def __post_init__(self) -> None:
         if self.group_size == 0 or self.group_size < -1:
             msg = f"Invalid group_size={self.group_size}. Group size must be a positive integer or -1."
             raise ValidationError(msg)
-        if self.narrow_range and not self.is_symmetric_integer:
-            msg = f"narrow_range applies to the symmetric integer modes only, not to {self.mode.value}."
-            raise ValidationError(msg)
         if self.mse_scale and not self.is_symmetric_integer:
             msg = f"mse_scale applies to the symmetric integer modes only, not to {self.mode.value}."
-            raise ValidationError(msg)
-        if self.mse_scale and self.narrow_range:
-            msg = "mse_scale and narrow_range are two different choices of the symmetric integer scale."
             raise ValidationError(msg)
 
     @property
@@ -184,7 +175,7 @@ class WeightCompressionConfig:
         return self.mode in [CompressWeightsMode.INT3_SYM]
 
     def __hash__(self) -> int:
-        return hash((self.mode.value, self.group_size, self.narrow_range, self.mse_scale))
+        return hash((self.mode.value, self.group_size, self.mse_scale))
 
 
 @dataclass
