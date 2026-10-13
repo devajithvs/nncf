@@ -217,7 +217,7 @@ def _do_float_quantization_single_scale(
         weight, reduction_axes = reshape_weight_for_grouped_quantization(weight, reduction_axes, config.group_size)
 
     # Optimized implementation
-    if _can_run_optimized(weight, config.mode):
+    if _can_run_optimized(weight, config):
         from nncf.openvino.optimized_functions import do_float_quantization as do_float_quantization_ov
 
         return do_float_quantization_ov(weight, config, reduction_axes, precomputed_scale)
@@ -268,7 +268,7 @@ def float_quantize_dequantize_weight(
         if return_compressed_weight is True.
     """
     # Optimized implementation
-    if _can_run_optimized(weight, config.mode):
+    if _can_run_optimized(weight, config):
         from nncf.openvino.optimized_functions import (
             float_quantize_dequantize_weight as float_quantize_dequantize_weight_ov,
         )
@@ -330,6 +330,9 @@ def calculate_integer_quantization_params(
     if config.mode == CompressWeightsMode.INT1_SYM:
         return _calculate_sign_scale(weight, reduction_axes), None
 
+    if config.mse_scale:
+        return _calculate_mse_scale(weight, reduction_axes, num_bits), None
+
     scale = _calculate_signed_scale(weight, reduction_axes, num_bits, config.narrow_range)
     return scale, None
 
@@ -374,7 +377,7 @@ def get_integer_quantization_error(
         raise nncf.InternalError(exception_str)
 
     # Optimized implementation
-    if _can_run_optimized(weight, config.mode):
+    if _can_run_optimized(weight, config):
         from nncf.openvino.optimized_functions import (
             get_integer_quantization_error as get_integer_quantization_error_ov,
         )
@@ -507,7 +510,7 @@ def do_integer_quantization(
         weight, reduction_axes = reshape_weight_for_grouped_quantization(weight, reduction_axes, config.group_size)
 
     # Optimized implementation
-    if _can_run_optimized(weight, config.mode):
+    if _can_run_optimized(weight, config):
         from nncf.openvino.optimized_functions import do_integer_quantization as do_integer_quantization_ov
 
         return do_integer_quantization_ov(weight, config, reduction_axes, precomputed_scale, precomputed_zero_point)
@@ -555,7 +558,7 @@ def integer_quantize_dequantize_weight(
         if return_compressed_weight is True.
     """
     # Optimized implementation
-    if _can_run_optimized(weight, config.mode):
+    if _can_run_optimized(weight, config):
         from nncf.openvino.optimized_functions import (
             integer_quantize_dequantize_weight as integer_quantize_dequantize_weight_ov,
         )
@@ -633,6 +636,74 @@ def _calculate_codebook_indexes(
         center_of_quantiles = 0.5 * (quantiles[1:] + quantiles[:-1])
     center_of_quantiles = fns.from_numpy(center_of_quantiles.data, backend=norm_weight.backend)
     return fns.searchsorted(center_of_quantiles, norm_weight)
+
+
+MSE_SCALE_SEARCH_STEPS = 16
+
+
+def _mse_scale_candidates(num_bits: int) -> tuple[float, ...]:
+    """
+    The search factors `k` of the MSE scale rule: candidates are `max|w| / k`, geometric from the full-range divisor
+    `2^(num_bits - 1)` (the candidate that uses every level of the grid) down to `1` (the candidate that maps the
+    group's largest weight to a single code step, which represents a group of two levels exactly).
+
+    :param num_bits: Number of bits in the compression.
+    :return: The `k` values, both endpoints included.
+    """
+    top = float(2 ** (num_bits - 1))
+    step = top ** (1.0 / (MSE_SCALE_SEARCH_STEPS - 1))
+    return (*(top / step**i for i in range(MSE_SCALE_SEARCH_STEPS - 1)), 1.0)
+
+
+def _calculate_mse_scale(weight: Tensor, reduction_axes: ReductionAxes, num_bits: int) -> Tensor:
+    """
+    Calculates, for every group, the scale that minimises the group's mean squared reconstruction error.
+
+    The scale is searched over the candidates of :func:`_mse_scale_candidates` and then refined once by the
+    closed-form minimiser of the winning code pattern, `<c, w> / <c, c>`, which is kept when it lowers the measured
+    error. The rule is data-free: only the group's own weights enter it, no calibration statistics. On a group of
+    two levels (`+-d`) the `k = 1` candidate is exact, so the search lands on the largest magnitude itself and the
+    group is represented without loss, while a group with a spread of magnitudes is free to use the whole grid.
+
+    :param weight: Weight array to compress.
+    :param reduction_axes: Axes along which to reduce (collect) different statistics (e.g. min, max).
+    :param num_bits: Number of bits in the compression.
+    :return: Scale tensor.
+    """
+    level_low = -(2 ** (num_bits - 1))
+    level_high = 2 ** (num_bits - 1) - 1
+    eps = fns.finfo(weight).eps
+    w_abs_max = fns.maximum(fns.max(fns.abs(weight), axis=reduction_axes, keepdims=True), eps)
+
+    def codes_and_error(scale: Tensor) -> tuple[Tensor, Tensor]:
+        codes = fns.clip(fns.round(weight / scale), level_low, level_high)
+        error = fns.mean(fns.power(codes * scale - weight, 2), axis=reduction_axes, keepdims=True)
+        return codes, error
+
+    def stored(scale: Tensor) -> Tensor:
+        # The scale is stored in f16 with the compressed weight, so the error is measured on the stored form: a
+        # division that is exact in f16 (a power-of-two factor, or a group of two levels) is then preferred over one
+        # that is not. A group whose values underflow f16 keeps its f32 scale.
+        rounded = scale.astype(TensorDataType.float16).astype(TensorDataType.float32)
+        return fns.where(rounded > 0, rounded, scale)
+
+    best_scale, best_error = None, None
+    for factor in _mse_scale_candidates(num_bits):
+        scale = stored(w_abs_max / factor)
+        _, error = codes_and_error(scale)
+        if best_scale is None:
+            best_scale, best_error = scale, error
+        else:
+            better = error < best_error
+            best_scale = fns.where(better, scale, best_scale)
+            best_error = fns.where(better, error, best_error)
+
+    codes, _ = codes_and_error(best_scale)
+    weights_sum = fns.sum(codes * weight, axis=reduction_axes, keepdims=True)
+    codes_sum = fns.sum(codes * codes, axis=reduction_axes, keepdims=True)
+    refined = stored(fns.where(codes_sum < eps, best_scale, weights_sum / codes_sum))
+    _, refined_error = codes_and_error(refined)
+    return fns.where(refined_error < best_error, refined, best_scale)
 
 
 def _calculate_normalized_weight(weight: Tensor, scale: Tensor) -> Tensor:
@@ -717,7 +788,12 @@ def _calculate_integer_quantized_weight(
     return compressed_weights
 
 
-def _can_run_optimized(inp: Tensor, mode: CompressWeightsMode) -> bool:
+def _can_run_optimized(inp: Tensor, config: WeightCompressionConfig) -> bool:
+    if config.mse_scale:
+        # The optimized path is a cached OpenVINO graph of the closed-form scale rules; the MSE rule is a per-group
+        # search over candidates, so it runs on the reference lowering.
+        return False
+    mode = config.mode
     if (
         inp.backend in [TensorBackend.ov, TensorBackend.numpy]
         and inp.size >= MIN_INPUT_SIZE_FOR_OPTIMIZED_COMPRESSION

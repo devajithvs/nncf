@@ -438,6 +438,13 @@ class AdvancedCompressionParameters:
         the largest-magnitude weight of a group to -2^(b-1), so a group whose weights are symmetric in magnitude
         (e.g. +-d) has its positive end clipped; the narrow range represents such a group exactly. Defaults to False.
     :type narrow_range: bool
+    :param mse_scale: Whether the symmetric integer modes (INT2_SYM, INT3_SYM, INT4_SYM, INT8_SYM) choose each
+        group's scale by a data-free mean-squared-error search over candidate scales computed from the group's own
+        weights, instead of the closed-form `max|w| / 2^(b-1)` (or `max|w| / (2^(b-1) - 1)`) rules. The search uses
+        the full-range grid `[-2^(b-1), 2^(b-1) - 1]` and its candidates include `max|w|` itself, so a group of two
+        levels (e.g. +-d) is represented exactly while a group with a spread of magnitudes still uses every level.
+        No calibration data is used: only the weights being compressed. Defaults to False.
+    :type mse_scale: bool
     """
 
     statistics_path: str | None = None
@@ -453,6 +460,7 @@ class AdvancedCompressionParameters:
     backend_params: dict[str, Any] = field(default_factory=dict)
     codebook: TTensor | None = None
     narrow_range: bool = False
+    mse_scale: bool = False
     adaptive_codebook_params: AdvancedAdaptiveCodebookParameters = field(
         default_factory=AdvancedAdaptiveCodebookParameters
     )
