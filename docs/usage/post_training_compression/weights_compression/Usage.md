@@ -47,6 +47,9 @@ NNCF can automatically distribute precision assignments based on quantization se
 | Compression Mode | Element type | Scale type | Granularity              | Supported backends               | Description |
 |------------------|--------------|------------|--------------------------|----------------------------------|-------------|
 | INT4_SYM         | INT4         | FP16       | Per-channel / Group-wise | OpenVINO, PyTorch, ONNX, TorchFX | [Symmetric quantization](/docs/usage/Quantization.md#symmetric-quantization) |
+| INT3_SYM         | UINT3        | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric, full range, stored unsigned with an offset |
+| INT2_SYM         | UINT2        | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric, full range, stored unsigned with an offset |
+| INT1_SYM         | S1           | FP16       | Per-channel / Group-wise | OpenVINO                         | Balanced binary sign grid: codes {-1, +1}, scale mean\|w\|, no zero point |
 | INT4_ASYM        | INT4         | FP16       | Per-channel / Group-wise | OpenVINO, PyTorch, ONNX, TorchFX | [Asymmetric quantization](/docs/usage/Quantization.md#asymmetric-quantization) |
 | NF4              | FP32         | FP16       | Per-channel / Group-wise | OpenVINO                         | [NormalFloat-4](https://arxiv.org/pdf/2305.14314v1.pdf) lookup table with 16 FP32 values |
 | CODEBOOK         | Any          | FP16       | Per-channel / Group-wise | OpenVINO                         | Arbitrary lookup table (codebook) |
@@ -56,6 +59,19 @@ NNCF can automatically distribute precision assignments based on quantization se
 |   FP8_E4M3       | E4M3         | FP16       | Per-channel / Group-wise | OpenVINO, ONNX                   | [FP8](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf) |
 |   FP4            | E2M1         | FP16       | Per-channel / Group-wise | OpenVINO                         | [FP4](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf) |
 | NVFP4            | E2M1         | E4M3 per group / FP32 per weight | Group-wise (16)          | OpenVINO              | [NVFP4](https://arxiv.org/abs/2509.25149) |
+
+The symmetric integer modes have two code ranges, selected by `narrow_range`:
+
+| | Full range (default) | Narrow range (`narrow_range=True`) |
+|---|---|---|
+| Codes | `[-2^(b-1), 2^(b-1)-1]` | `[-(2^(b-1)-1), 2^(b-1)-1]` |
+| Scale | `max\|w\| / 2^(b-1)` | `max\|w\| / (2^(b-1)-1)` |
+| Unsigned storage offset | `2^(b-1)` | `2^(b-1)-1` |
+| INT1_SYM | sign grid `{-1,+1}`, scale `mean\|w\|`; `narrow_range` does not apply (the 1-bit narrow range is `{0}`) | — |
+
+The full range spends the most negative code on a value the data may not have; the narrow range spends no code
+outside the data, so a group whose weights are `{+/-d}` or `{-d, 0, +d}` is represented exactly: at 2 bits the
+narrow codes are `{-1, 0, +1}` with scale `max|w|`, at 4 bits they are `+/-7` with scale `max|w|/7`.
 
 **Note**: Granularity refers to the scope of elements sharing quantization parameters. "Per-channel" applies different parameters for each output channel, while "Group-wise" divides weights into groups (e.g., group_size=128) that share the same parameters.
 
