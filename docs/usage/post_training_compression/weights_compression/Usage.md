@@ -47,8 +47,8 @@ NNCF can automatically distribute precision assignments based on quantization se
 | Compression Mode | Element type | Scale type | Granularity              | Supported backends               | Description |
 |------------------|--------------|------------|--------------------------|----------------------------------|-------------|
 | INT4_SYM         | INT4         | FP16       | Per-channel / Group-wise | OpenVINO, PyTorch, ONNX, TorchFX | [Symmetric quantization](/docs/usage/Quantization.md#symmetric-quantization) |
-| INT3_SYM         | UINT3        | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric, full range, stored unsigned with an offset |
-| INT2_SYM         | UINT2        | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric, full range, stored unsigned with an offset |
+| INT3_SYM         | UINT3        | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric, stored unsigned with an offset: there is no signed 3-bit element type |
+| INT2_SYM         | INT2         | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric, codes stored signed, no zero point |
 | INT1_SYM         | S1           | FP16       | Per-channel / Group-wise | OpenVINO                         | Balanced binary sign grid: codes {-1, +1}, scale mean\|w\|, no zero point |
 | INT4_ASYM        | INT4         | FP16       | Per-channel / Group-wise | OpenVINO, PyTorch, ONNX, TorchFX | [Asymmetric quantization](/docs/usage/Quantization.md#asymmetric-quantization) |
 | NF4              | FP32         | FP16       | Per-channel / Group-wise | OpenVINO                         | [NormalFloat-4](https://arxiv.org/pdf/2305.14314v1.pdf) lookup table with 16 FP32 values |
@@ -66,8 +66,11 @@ The symmetric integer modes have two code ranges, selected by `narrow_range`:
 |---|---|---|
 | Codes | `[-2^(b-1), 2^(b-1)-1]` | `[-(2^(b-1)-1), 2^(b-1)-1]` |
 | Scale | `max\|w\| / 2^(b-1)` | `max\|w\| / (2^(b-1)-1)` |
-| Unsigned storage offset | `2^(b-1)` | `2^(b-1)-1` |
 | INT1_SYM | sign grid `{-1,+1}`, scale `mean\|w\|`; `narrow_range` does not apply (the 1-bit narrow range is `{0}`) | — |
+
+The codes are stored in the signed element type of the width (`i2`, `i4`, `i8`); INT3_SYM is the exception, since
+there is no signed 3-bit type: it is stored unsigned and its graph subtracts the offset `2^(b-1)` before the scale.
+No mode carries a zero point.
 
 The full range spends the most negative code on a value the data may not have; the narrow range spends no code
 outside the data, so a group whose weights are `{+/-d}` or `{-d, 0, +d}` is represented exactly: at 2 bits the
