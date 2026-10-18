@@ -328,6 +328,8 @@ def calculate_integer_quantization_params(
         return scale, zero_point
 
     if config.mode == CompressWeightsMode.INT1_SYM:
+        # The sign grid stores no magnitude, so its scale is not derived from `max|w|` like the integer grids
+        # below, but is the group's mean absolute weight.
         return _calculate_sign_scale(weight, reduction_axes), None
 
     scale = _calculate_signed_scale(weight, reduction_axes, num_bits, config.narrow_range)
@@ -336,9 +338,11 @@ def calculate_integer_quantization_params(
 
 def _calculate_sign_scale(weight: Tensor, reduction_axes: ReductionAxes) -> Tensor:
     """
-    Calculates the scale of the sign grid: the group's mean absolute weight. For a group whose weights are `+/-s`
-    this is `s`, so the sign grid reconstructs it exactly; for any other group it is the error-minimising scale of
-    sign quantization.
+    Calculates the scale of the sign grid: the mean absolute weight of the group.
+
+    `_calculate_signed_scale` does not apply here: it divides the largest absolute weight by the number of
+    positive levels, and the sign grid has a single positive level. `mean|w|` is the scale that minimises the
+    error of `w ~ scale * sign(w)`, and it reconstructs a group whose weights are `+/-s` exactly.
 
     :param weight: Weight array to compress.
     :param reduction_axes: Axes, along which to reduce (collect) statistics.
