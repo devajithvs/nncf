@@ -690,7 +690,8 @@ def _calculate_integer_quantized_weight(
     :param config: Weight compression configuration.
     :param scale: Scale tensor used for quantization.
     :param zero_point: Zero point tensor used for quantization.
-    :return: Quantized weight tensor of uint8, int8, uint4, uint2 or uint1 type.
+    :return: Quantized weight tensor of uint8 (asymmetric modes) or int8 (symmetric modes) values, clipped to the
+        code range of the mode. The caller packs them into the storage type of the mode.
     """
     if weight.dtype != TensorDataType.float32:
         weight = weight.astype(TensorDataType.float32)
