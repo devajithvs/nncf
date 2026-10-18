@@ -188,8 +188,10 @@ def check_user_compression_configuration(
             raise nncf.ParameterNotSupportedError(msg)
 
     if mode in SIGN_ONLY_MODES:
-        # The sign grid is data-free: its scale is the mean absolute weight, so there is nothing for a data-aware
-        # algorithm to fit.
+        # The modes above store one sign per weight: `w = scale * sign(w)` with the scale equal to the group's
+        # mean absolute weight, so the decompressed weights are fixed by the original weights alone. The options
+        # below fit the decompressed weights against activations (AWQ, scale estimation, GPTQ, LoRA correction) or
+        # supply the activations for such a fit (dataset), so they are rejected instead of silently ignored.
         data_aware_options = {
             "dataset": dataset,
             "awq": awq,
@@ -197,11 +199,11 @@ def check_user_compression_configuration(
             "gptq": gptq,
             "lora_correction": lora_correction,
         }
-        unsupported_for_data_free = [name for name, value in data_aware_options.items() if value is not None]
-        if unsupported_for_data_free:
+        unsupported_for_sign_only = [name for name, value in data_aware_options.items() if value is not None]
+        if unsupported_for_sign_only:
             msg = (
-                f"{mode.value} is a data-free format and does not support "
-                f"{', '.join(unsupported_for_data_free)} option(s). Set them to None."
+                f"{mode.value} stores one sign per weight and derives its scale from the weights, so it does not "
+                f"support the data-aware {', '.join(unsupported_for_sign_only)} option(s). Set them to None."
             )
             raise nncf.ParameterNotSupportedError(msg)
 
