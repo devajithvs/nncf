@@ -117,6 +117,8 @@ def _(a: ov.Tensor) -> np.ndarray[Any, np.dtype[Any]]:
     a_dtype = DTYPE_MAP_REV[a.get_element_type()]
     if a_dtype in NATIVE_OV_CAST_DTYPES:
         dtype = TensorDataType.float32
+        # Sub-byte integers have no NumPy counterpart, so widen them to the smallest NumPy type that holds the
+        # same values: unsigned 4-bit codes to uint8, signed 4-bit codes to int8.
         if a_dtype == TensorDataType.uint4:
             dtype = TensorDataType.uint8
         elif a_dtype == TensorDataType.int4:
