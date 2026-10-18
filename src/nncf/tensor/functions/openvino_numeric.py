@@ -22,6 +22,9 @@ from nncf.tensor.functions import numeric
 from nncf.tensor.functions.numpy_numeric import DTYPE_MAP_REV as DTYPE_MAP_REV_NUMPY
 
 DTYPE_MAP: dict[TensorDataType, ov.Type] = {
+    # INT2_SYM stores its codes [-2, 1] ([-1, 1] with narrow_range) in a signed 2-bit container, like the other
+    # symmetric integer modes, so the graph converts them to float directly. INT3_SYM is the exception: OpenVINO
+    # has no signed 3-bit element type, so its codes stay unsigned and the graph subtracts the offset.
     TensorDataType.int2: ov.Type.i2,
     TensorDataType.sign1: ov.Type.s1,
     TensorDataType.int3: ov.Type.u3,
