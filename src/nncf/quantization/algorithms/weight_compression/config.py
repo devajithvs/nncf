@@ -168,7 +168,13 @@ class WeightCompressionConfig:
     @property
     def is_symmetric_represented_by_unsigned(self) -> bool:
         """
-        True if compression type is symmetric and represented by unsigned integer, else False.
+        True if the codes of a symmetric mode are stored in an unsigned container, so that the graph has to
+        subtract the offset 2^(b-1) from them before multiplying by the scale.
+
+        Only INT3_SYM is such a mode: OpenVINO defines signed integer element types of 1, 2, 4, 8, 16, 32 and 64
+        bits (`s1`, `i2`, `i4`, `i8`, ...), but no signed 3-bit type. The 3-bit codes [-4, 3] are therefore stored
+        as the unsigned values [0, 7] in a `u3` container. INT1_SYM (`s1`), INT2_SYM (`i2`), INT4_SYM (`i4`) and
+        INT8_SYM (`i8`) are stored signed and need no offset.
         """
         return self.mode in [CompressWeightsMode.INT3_SYM]
 
