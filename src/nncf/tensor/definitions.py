@@ -51,10 +51,10 @@ class TensorDataType(StrEnum):
     uint32 = auto()
     uint8 = auto()
     uint4 = auto()
-    uint1 = auto()
     int4 = auto()
     int3 = auto()
     int2 = auto()
+    # One sign per weight: the values are -1 and +1, so they need a signed container.
     sign1 = auto()
 
     def is_float(self) -> bool:
@@ -80,7 +80,6 @@ class TensorDataType(StrEnum):
         itemsize_bits = {
             TensorDataType.nf4: 4,
             TensorDataType.uint4: 4,
-            TensorDataType.uint1: 1,
             TensorDataType.int4: 4,
             TensorDataType.int3: 3,
             TensorDataType.int2: 2,

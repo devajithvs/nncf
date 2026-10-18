@@ -44,10 +44,12 @@ DTYPE_MAP: dict[TensorDataType, ov.Type] = {
     TensorDataType.uint32: ov.Type.u32,
     TensorDataType.uint8: ov.Type.u8,
     TensorDataType.uint4: ov.Type.u4,
-    TensorDataType.uint1: ov.Type.u1,
     TensorDataType.int4: ov.Type.i4,
 }
 
+# Data types that have no NumPy counterpart and therefore need an explicit OpenVINO cast before NumPy sees them.
+# `sign1` and `int2` belong here for the same reason as `nf4` or `uint4`: NumPy has neither a 1-bit sign type nor
+# a 2-bit integer type.
 NATIVE_OV_CAST_DTYPES = [
     TensorDataType.bfloat16,
     TensorDataType.int2,
@@ -55,7 +57,6 @@ NATIVE_OV_CAST_DTYPES = [
     TensorDataType.int3,
     TensorDataType.int4,
     TensorDataType.uint4,
-    TensorDataType.uint1,
     TensorDataType.nf4,
     TensorDataType.f4e2m1,
     TensorDataType.f8e8m0,
@@ -116,7 +117,7 @@ def _(a: ov.Tensor) -> np.ndarray[Any, np.dtype[Any]]:
     a_dtype = DTYPE_MAP_REV[a.get_element_type()]
     if a_dtype in NATIVE_OV_CAST_DTYPES:
         dtype = TensorDataType.float32
-        if a_dtype in (TensorDataType.uint4, TensorDataType.uint1):
+        if a_dtype == TensorDataType.uint4:
             dtype = TensorDataType.uint8
         elif a_dtype == TensorDataType.int4:
             dtype = TensorDataType.int8
