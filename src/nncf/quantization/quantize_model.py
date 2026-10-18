@@ -441,6 +441,9 @@ def compress_weights(
             criteria and the given ratio.
         INT4_ASYM is the same as INT4_SYM mode, but weights are quantized to a primary precision asymmetrically
             with a typical non-fixed zero point.
+        INT1_SYM is a data-free 1-bit format with a sign grid and without zero point: each weight is stored as its
+            sign and the scale is the group's mean absolute weight, so `w = s * sign` reconstructs a group of weights
+            `+/-s` exactly.
         NF4 is the same as INT4_SYM mode, but primary precision is NF4 data type without zero point.
         MXFP4 is MX-compliant FP4 format with E2M1 values sharing group-level E8M0 scale. The size of group is 32.
         MXFP8_E4M3 - is MX-compliant FP8 format with E4M3 values sharing a group-level E8M0 scale.

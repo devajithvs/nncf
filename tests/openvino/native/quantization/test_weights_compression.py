@@ -1514,6 +1514,53 @@ def test_int_compressed_weighs_range(mode, data):
     assert np.allclose(np.abs(compressed_weight.tensor.data), np.abs(w.data))
 
 
+def _build_matmul_model(weight: np.ndarray) -> ov.Model:
+    """
+    A model whose only weight is the given one.
+    """
+    input_node = opset.parameter([1, weight.shape[1]], name="Input")
+    matmul = opset.matmul(
+        input_node, opset.constant(weight, name="Weights"), transpose_a=False, transpose_b=True, name="MatMul"
+    )
+    return ov.Model([opset.result(matmul, name="Result")], [input_node])
+
+
+def test_int2_sym_is_emitted_as_signed_i2_without_zero_point():
+    """
+    The 2-bit symmetric codes are stored in a signed `i2` constant with no zero point, not in a `u2` container
+    shifted by an offset: the graph is `Convert(i2) -> Multiply(scale)` and carries no `Subtract`. With the
+    narrow range the codes are `{-1, 0, +1}`, so a group `{-d, 0, +d}` is reconstructed exactly.
+    """
+    group_size, num_groups = 8, 2
+    hidden_dim = group_size * num_groups
+    scales = np.array([0.5, 0.25], np.float32)
+    codes_row = np.resize(np.array([-1.0, 0.0, 1.0], np.float32), hidden_dim)
+    row = codes_row * np.repeat(scales, group_size)
+    weight = np.tile(row, (hidden_dim, 1))
+
+    model = _build_matmul_model(weight)
+    input_data = np.random.default_rng(0).standard_normal((1, hidden_dim)).astype(np.float32)
+    reference = ov.Core().compile_model(model, "CPU")({0: input_data})[0]
+
+    compressed_model = compress_weights(
+        model,
+        mode=CompressWeightsMode.INT2_SYM,
+        group_size=group_size,
+        ratio=1.0,
+        all_layers=True,
+        advanced_parameters=AdvancedCompressionParameters(narrow_range=True),
+    )
+    result = ov.Core().compile_model(compressed_model, "CPU")({0: input_data})[0]
+    assert np.array_equal(result, reference)
+
+    constants = {
+        op.get_friendly_name(): op for op in compressed_model.get_ordered_ops() if op.get_type_name() == "Constant"
+    }
+    assert constants["Weights"].get_element_type() == ov.Type.i2
+    assert "Weights/zero_point" not in constants
+    assert not any(op.get_type_name() == "Subtract" for op in compressed_model.get_ordered_ops())
+
+
 FP4_REF = {
     "neg": [
         -8.0,
