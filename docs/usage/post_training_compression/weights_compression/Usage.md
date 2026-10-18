@@ -68,8 +68,10 @@ The symmetric integer modes have two code ranges, selected by `narrow_range`:
 | Scale | `max\|w\| / 2^(b-1)` | `max\|w\| / (2^(b-1)-1)` |
 | INT1_SYM | sign grid `{-1,+1}`, scale `mean\|w\|`; `narrow_range` does not apply (the 1-bit narrow range is `{0}`) | — |
 
-The codes are stored in the signed element type of the width (`i2`, `i4`, `i8`); INT3_SYM is the exception, since
-there is no signed 3-bit type: it is stored unsigned and its graph subtracts the offset `2^(b-1)` before the scale.
+The codes are stored in the signed element type of the width (`i2`, `i4`, `i8`). INT3_SYM is the exception: OpenVINO
+defines signed integer element types of 1, 2, 4, 8, 16, 32 and 64 bits, but no 3-bit type, so the 3-bit codes stay
+unsigned and the graph subtracts the offset `2^(b-1)` before the scale. For example, the full-range codes of a 3-bit
+group, `[-4, 3]`, are stored in a `u3` container as `[0, 7]`, and the graph subtracts the offset `4` from them.
 No mode carries a zero point.
 
 The full range spends the most negative code on a value the data may not have; the narrow range spends no code
