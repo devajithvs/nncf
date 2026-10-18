@@ -61,7 +61,9 @@ TTensor = TypeVar("TTensor")
 
 INT8_MODES = [CompressWeightsMode.INT8_ASYM, CompressWeightsMode.INT8_SYM]
 NON_INT8_MODES = [mode for mode in CompressWeightsMode if mode not in INT8_MODES]
-DATA_FREE_MODES = [CompressWeightsMode.INT1_SYM]
+# Modes that store a weight as its sign and take the single scale of a group from the weights themselves
+# (`mean|w|` for INT1_SYM), so a decompressed weight is `scale * sign(weight)`.
+SIGN_ONLY_MODES = [CompressWeightsMode.INT1_SYM]
 SUPPORTED_DATA_TYPES = [
     TensorDataType.float16,
     TensorDataType.bfloat16,
@@ -185,7 +187,7 @@ def check_user_compression_configuration(
             msg = f"INT8 modes do not support {', '.join(unsupported_for_int8)} option(s). Set them to None."
             raise nncf.ParameterNotSupportedError(msg)
 
-    if mode in DATA_FREE_MODES:
+    if mode in SIGN_ONLY_MODES:
         # The sign grid is data-free: its scale is the mean absolute weight, so there is nothing for a data-aware
         # algorithm to fit.
         data_aware_options = {
