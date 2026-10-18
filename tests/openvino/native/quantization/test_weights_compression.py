@@ -55,6 +55,7 @@ from nncf.quantization.algorithms.weight_compression.weight_lowering import _cal
 from nncf.quantization.algorithms.weight_compression.weight_lowering import _calculate_normalized_weight
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_float_dequantization
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_float_quantization
+from nncf.quantization.algorithms.weight_compression.weight_lowering import do_integer_dequantization
 from nncf.quantization.algorithms.weight_compression.weight_lowering import do_integer_quantization
 from nncf.quantization.algorithms.weight_compression.weight_lowering import get_integer_quantization_error
 from nncf.quantization.algorithms.weight_compression.weight_lowering import reshape_weight_for_grouped_quantization
@@ -925,6 +926,21 @@ def test_raise_error_with_unsupported_params_for_int4(mode, params):
         compress_weights(ov.Model([], []), mode=mode, **params)
 
 
+@pytest.mark.parametrize(
+    "params",
+    (
+        {"dataset": "anything"},
+        {"scale_estimation": True},
+        {"lora_correction": True},
+        {"gptq": True},
+        {"awq": True},
+    ),
+)
+def test_raise_error_with_unsupported_params_for_int1_sym(params):
+    with pytest.raises(nncf.ParameterNotSupportedError):
+        compress_weights(ov.Model([], []), mode=CompressWeightsMode.INT1_SYM, **params)
+
+
 @pytest.mark.parametrize("mode", [CompressWeightsMode.MXFP4, CompressWeightsMode.MXFP8_E4M3, CompressWeightsMode.NVFP4])
 class TestUnsupportedParams:
     @pytest.mark.parametrize(
@@ -1515,6 +1531,25 @@ def test_int_compressed_weighs_range(mode, data):
 
 
 @pytest.mark.parametrize(
+    "data",
+    (
+        np.array([-2.0, 2.0, 2.0, -2.0], np.float32),
+        np.array([0.5, -0.5, -0.5, 0.5], np.float32),
+    ),
+)
+def test_int1_sym_reconstructs_two_level_groups(data):
+    # The sign grid stores one sign per weight and scales it by the group's mean absolute weight, which is the
+    # magnitude of a `+/-d` group, so such a group is reconstructed exactly and without a zero point.
+    config = WeightCompressionConfig(mode=CompressWeightsMode.INT1_SYM)
+    compressed_weight = do_integer_quantization(Tensor(data), config, -1)
+
+    assert np.array_equal(do_integer_dequantization(compressed_weight).data, data)
+    assert np.array_equal(np.unique(compressed_weight.tensor.data), np.array([-1, 1], np.int8))
+    assert compressed_weight.zero_point is None
+    assert np.allclose(compressed_weight.scale.data, np.abs(data).mean())
+
+
+@pytest.mark.parametrize(
     ("mode", "element_type", "has_offset"),
     (
         (CompressWeightsMode.INT2_SYM, ov.Type.i2, False),
@@ -1531,6 +1566,20 @@ def test_int2_3_sym_codes_are_emitted_in_their_element_type(mode, element_type, 
     constants = {op.get_friendly_name(): op for op in compressed_model.get_ops() if op.get_type_name() == "Constant"}
     assert constants["Weights"].get_element_type() == element_type
     assert ("Weights/zero_point" in constants) is has_offset
+
+
+def test_int1_sym_is_emitted_as_signed_1_bit_without_zero_point():
+    # One sign per weight: the constant is a bit-packed `s1` with a single bit per weight and no zero point.
+    model = MatMul(input_shape=[1, 1, 16], output_dim=16).ov_model
+
+    compressed_model = compress_weights(
+        model, mode=CompressWeightsMode.INT1_SYM, ratio=1.0, group_size=-1, all_layers=True
+    )
+
+    constants = {op.get_friendly_name(): op for op in compressed_model.get_ops() if op.get_type_name() == "Constant"}
+    assert constants["Weights"].get_element_type() == ov.Type.s1
+    assert constants["Weights"].get_byte_size() == int(np.prod(constants["Weights"].get_shape())) // 8
+    assert "Weights/zero_point" not in constants
 
 
 FP4_REF = {
