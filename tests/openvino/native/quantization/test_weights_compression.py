@@ -1682,6 +1682,23 @@ def test_int1_sym_is_emitted_as_signed_1_bit_without_zero_point():
     assert "Weights/zero_point" not in constants
 
 
+def test_int1_sym_model_reproduces_the_sign_grid():
+    # The compressed model is built from the bit-packed `s1` constant and reproduces on the CPU the sign-only
+    # reconstruction of the weights, `mean|w| * sign(w)` per group.
+    model = MatMul(input_shape=[1, 1, 16], output_dim=16).ov_model
+    weight = get_const_value_as_numpy_tensor({op.get_friendly_name(): op for op in model.get_ops()}["Weights"])
+    config = WeightCompressionConfig(mode=CompressWeightsMode.INT1_SYM, group_size=-1)
+    decompressed = do_integer_dequantization(do_integer_quantization(Tensor(weight), config, (1,))).data
+
+    compressed_model = compress_weights(
+        model, mode=CompressWeightsMode.INT1_SYM, ratio=1.0, group_size=-1, all_layers=True
+    )
+    input_data = np.ones([1, 1, 16], dtype=np.float32)
+    output = ov.compile_model(compressed_model, device_name="CPU")(input_data)[0]
+
+    np.testing.assert_allclose(output, input_data @ decompressed.T, rtol=1e-3)
+
+
 FP4_REF = {
     "neg": [
         -8.0,
