@@ -63,6 +63,7 @@ from nncf.quantization.algorithms.weight_compression.lora_correction import Lora
 from nncf.quantization.algorithms.weight_compression.parameters import CompressedWeight
 from nncf.quantization.algorithms.weight_compression.weight_lowering import compress_weight
 from nncf.tensor import Tensor
+from nncf.tensor import functions as fns
 from nncf.tensor.definitions import TensorDataType
 from nncf.tensor.functions.openvino_numeric import DTYPE_MAP
 from nncf.tensor.functions.openvino_numeric import DTYPE_MAP_REV
@@ -252,6 +253,8 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
         elif compression_config.mode == CompressWeightsMode.NVFP4:
             scale_dtype = ov.Type.f8e4m3
 
+        scale = compressed_weight.scale
+
         if compression_config.is_codebook:
             converted_const = create_ov_codebook_subgraph(
                 codebook=compressed_weight.codebook
@@ -261,6 +264,19 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
                 dtype=compression_dtype,
                 name=const_node_name,
             )
+        elif compression_config.mode == CompressWeightsMode.INT1_SYM:
+            # Then sign grid as u1: code 1 decodes to +s and code 0 to -s as (code - 0.5) * 2s. The zero point is
+            # one scalar f16 per weight and the scale is doubled here; the compressed weight keeps the sign grid
+            # and its mean|w| scale internally, so the error estimation and the backends are unchanged.
+            codes = fns.where(compressed_weight.tensor > 0, 1, 0).astype(TensorDataType.uint8)
+            compressed_const = create_ov_const_from_tensor(codes, compression_dtype, name=const_node_name)
+            converted_const = opset.convert(compressed_const, ov.Type.f16)
+
+            zero_point_const = opset.constant(0.5, dtype=ov.Type.f16, name=f"{const_node_name}/zero_point")
+            converted_const = opset.subtract(
+                converted_const, zero_point_const, name=f"{const_node_name}/zero_point/subtract"
+            )
+            scale = scale * 2
         elif compression_config.is_symmetric_represented_by_unsigned:
             offset = 2 ** (compression_config.num_bits - 1)
             compressed_tensor = compressed_weight.tensor + offset
@@ -288,7 +304,7 @@ class OVWeightCompressionAlgoBackend(WeightCompressionAlgoBackend):
                     converted_const, zero_point_const, name=f"{const_node_name}/zero_point/subtract"
                 )
 
-        scale_const = create_ov_const_from_tensor(compressed_weight.scale, scale_dtype, name=f"{const_node_name}/scale")
+        scale_const = create_ov_const_from_tensor(scale, scale_dtype, name=f"{const_node_name}/scale")
 
         if compressed_weight.global_scale is not None:
             sec_order_scale = create_ov_const_from_tensor(

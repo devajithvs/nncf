@@ -124,7 +124,6 @@ def test_parallel_edges():
         (ov.Type.i16, Dtype.INTEGER),
         (ov.Type.i32, Dtype.INTEGER),
         (ov.Type.i64, Dtype.INTEGER),
-        (ov.Type.s1, Dtype.INTEGER),
         (ov.Type.u1, Dtype.INTEGER),
         (ov.Type.u4, Dtype.INTEGER),
         (ov.Type.u8, Dtype.INTEGER),

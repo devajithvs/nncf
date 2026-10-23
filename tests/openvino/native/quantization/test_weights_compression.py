@@ -1663,7 +1663,8 @@ def test_int2_3_sym_codes_are_emitted_in_their_element_type(mode, element_type, 
 
 
 def test_int1_sym_compressed_model_reproduces_the_sign_grid():
-    # The constant is a bit-packed `s1` with no zero point, and the model computes `mean|w| * sign(w)`.
+    # The constant is a bit-packed `u1` whose dequantization is (code - 0.5) * 2 * mean|w|: one scalar f16
+    # zero point per weight and the doubled scale. The codes and the values are the sign grid's.
     model = MatMul(input_shape=[1, 1, 16], output_dim=16).ov_model
     weight = get_const_value_as_numpy_tensor({op.get_friendly_name(): op for op in model.get_ops()}["Weights"])
     config = WeightCompressionConfig(mode=CompressWeightsMode.INT1_SYM, group_size=-1)
@@ -1674,9 +1675,15 @@ def test_int1_sym_compressed_model_reproduces_the_sign_grid():
     )
 
     constants = {op.get_friendly_name(): op for op in compressed_model.get_ops() if op.get_type_name() == "Constant"}
-    assert constants["Weights"].get_element_type() == ov.Type.s1
+    assert constants["Weights"].get_element_type() == ov.Type.u1
     assert constants["Weights"].get_byte_size() == int(np.prod(constants["Weights"].get_shape())) // 8
-    assert "Weights/zero_point" not in constants
+    assert constants["Weights/zero_point"].get_element_type() == ov.Type.f16
+    assert constants["Weights/zero_point"].get_data().item() == 0.5
+    np.testing.assert_allclose(
+        get_const_value_as_numpy_tensor(constants["Weights/scale"]),
+        2 * np.abs(weight).mean(axis=-1, keepdims=True),
+        rtol=1e-6,
+    )
 
     input_data = np.ones([1, 1, 16], dtype=np.float32)
     output = ov.compile_model(compressed_model, device_name="CPU")(input_data)[0]

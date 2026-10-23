@@ -151,7 +151,7 @@ class WeightCompressionConfig:
         dtype_per_mode = {
             CompressWeightsMode.INT2_SYM: TensorDataType.int2,
             CompressWeightsMode.INT3_SYM: TensorDataType.int3,
-            CompressWeightsMode.INT1_SYM: TensorDataType.sign1,
+            CompressWeightsMode.INT1_SYM: TensorDataType.uint1,
             CompressWeightsMode.INT4_SYM: TensorDataType.int4,
             CompressWeightsMode.INT4_ASYM: TensorDataType.uint4,
             CompressWeightsMode.INT8_ASYM: TensorDataType.uint8,
