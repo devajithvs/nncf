@@ -667,7 +667,8 @@ class WeightCompression(Algorithm):
 
         if not self.is_weight_compression_supported(weight_dtype, mode):
             return None
-        return WeightCompressionConfig(mode=mode, group_size=group_size)
+        narrow_range = mode == CompressWeightsMode.INT8_SYM and self._advanced_parameters.narrow_range
+        return WeightCompressionConfig(mode=mode, group_size=group_size, narrow_range=narrow_range)
 
     def _get_primary_config(self, group_size: int) -> WeightCompressionConfig:
         codebook_values = None
@@ -685,6 +686,7 @@ class WeightCompression(Algorithm):
             mode=self._mode,
             group_size=group_size,
             codebook_values=codebook_values,
+            narrow_range=self._advanced_parameters.narrow_range,
         )
 
     def apply_mixed_precision(
