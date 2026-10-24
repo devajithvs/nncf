@@ -14,7 +14,8 @@
         "compression_config": {
             "mode": "int8_asym",
             "group_size": -1,
-            "codebook_values": null
+            "codebook_values": null,
+            "narrow_range": false
         }
     },
     {
@@ -32,7 +33,8 @@
         "compression_config": {
             "mode": "int4_sym",
             "group_size": 32,
-            "codebook_values": null
+            "codebook_values": null,
+            "narrow_range": false
         }
     }
 ]
