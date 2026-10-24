@@ -24,6 +24,7 @@ from nncf.tensor.definitions import TensorDataType
 
 INT8_MODES = [CompressWeightsMode.INT8_ASYM, CompressWeightsMode.INT8_SYM]
 NON_INT8_MODES = [mode for mode in CompressWeightsMode if mode not in INT8_MODES]
+SIGN_ONLY_MODES = [CompressWeightsMode.INT1_SYM]
 FIXED_GROUP_SIZE_MODES = {
     CompressWeightsMode.MXFP4: 32,
     CompressWeightsMode.MXFP8_E4M3: 32,
@@ -109,6 +110,7 @@ class WeightCompressionConfig:
             CompressWeightsMode.MXFP8_E4M3: 8,
             CompressWeightsMode.INT3_SYM: 3,
             CompressWeightsMode.INT2_SYM: 2,
+            CompressWeightsMode.INT1_SYM: 1,
         }
 
         try:
@@ -177,6 +179,7 @@ class WeightCompressionConfig:
                 return TensorDataType.uint8
             return TensorDataType.uint16
         dtype_per_mode = {
+            CompressWeightsMode.INT1_SYM: TensorDataType.uint1,
             CompressWeightsMode.INT2_SYM: TensorDataType.int2,
             CompressWeightsMode.INT3_SYM: TensorDataType.int3,
             CompressWeightsMode.INT4_SYM: TensorDataType.int4,

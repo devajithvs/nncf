@@ -48,6 +48,7 @@ NNCF can automatically distribute precision assignments based on quantization se
 |------------------|--------------|------------|--------------------------|----------------------------------|-------------|
 | INT4_SYM         | INT4         | FP16       | Per-channel / Group-wise | OpenVINO, PyTorch, ONNX, TorchFX | [Symmetric quantization](/docs/usage/Quantization.md#symmetric-quantization) |
 | INT2_SYM         | INT2         | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric, codes stored signed, no zero point |
+| INT1_SYM         | U1           | FP16       | Per-channel / Group-wise | OpenVINO                         | Symmetric sign grid: one bit per weight, stored as u1 codes with a scalar zero point of 0.5 and twice `mean\|w\|` as the scale |
 | INT4_ASYM        | INT4         | FP16       | Per-channel / Group-wise | OpenVINO, PyTorch, ONNX, TorchFX | [Asymmetric quantization](/docs/usage/Quantization.md#asymmetric-quantization) |
 | NF4              | FP32         | FP16       | Per-channel / Group-wise | OpenVINO                         | [NormalFloat-4](https://arxiv.org/pdf/2305.14314v1.pdf) lookup table with 16 FP32 values |
 | CODEBOOK         | Any          | FP16       | Per-channel / Group-wise | OpenVINO                         | Arbitrary lookup table (codebook) |
@@ -64,6 +65,7 @@ The symmetric integer modes have two code ranges, selected by `narrow_range`:
 |---|---|---|
 | Codes | `[-2^(b-1), 2^(b-1)-1]` | `[-(2^(b-1)-1), 2^(b-1)-1]` |
 | Scale | `max\|w\| / 2^(b-1)` | `max\|w\| / (2^(b-1)-1)` |
+| INT1_SYM | sign grid, scale `mean\|w\|` | does not apply: the 1-bit narrow grid is `{0}` |
 
 The narrow range represents a group whose weights are symmetric in magnitude, e.g. `{+/-d}`, exactly.
 
