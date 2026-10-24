@@ -2,11 +2,13 @@
     "wte/embedding/0": {
         "mode": "int4_asym",
         "group_size": 2,
-        "codebook_values": null
+        "codebook_values": null,
+        "narrow_range": false
     },
     "linear/linear/0": {
         "mode": "int8_sym",
         "group_size": -1,
-        "codebook_values": null
+        "codebook_values": null,
+        "narrow_range": false
     }
 }
