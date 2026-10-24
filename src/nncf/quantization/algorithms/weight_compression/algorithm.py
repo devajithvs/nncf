@@ -45,6 +45,7 @@ from nncf.quantization.algorithms.algorithm import Algorithm
 from nncf.quantization.algorithms.weight_compression.awq import AWQ
 from nncf.quantization.algorithms.weight_compression.config import FIXED_GROUP_SIZE_MODES
 from nncf.quantization.algorithms.weight_compression.config import INT8_MODES
+from nncf.quantization.algorithms.weight_compression.config import SIGN_ONLY_MODES
 from nncf.quantization.algorithms.weight_compression.config import WeightCompressionParameters
 from nncf.quantization.algorithms.weight_compression.config import get_default_group_size
 from nncf.quantization.algorithms.weight_compression.constants import CB4_QUANTILES
@@ -252,6 +253,22 @@ def check_user_compression_configuration(
             msg = f"INT8 modes do not support {', '.join(unsupported_for_int8)} option(s). Set them to None."
             raise nncf.ParameterNotSupportedError(msg)
 
+    if mode in SIGN_ONLY_MODES:
+        data_aware_options = {
+            "dataset": dataset,
+            "awq": awq,
+            "scale_estimation": scale_estimation,
+            "gptq": gptq,
+            "lora_correction": lora_correction,
+        }
+        unsupported_for_sign_only = [name for name, value in data_aware_options.items() if value is not None]
+        if unsupported_for_sign_only:
+            msg = (
+                f"{mode.value} stores one sign per weight and derives its scale from the weights, so it does not "
+                f"support the data-aware {', '.join(unsupported_for_sign_only)} option(s). Set them to None."
+            )
+            raise nncf.ParameterNotSupportedError(msg)
+
     if ratio is not None and not (0 <= ratio <= 1):
         msg = f"The ratio should be between 0 and 1, but ratio={ratio} is specified."
         raise nncf.ValidationError(msg)
@@ -396,6 +413,8 @@ class WeightCompression(Algorithm):
                 criteria and the given ratio.
             INT4_ASYM is the same as INT4_SYM mode, but weights are quantized to a primary precision asymmetrically
                 with a typical non-fixed zero point.
+            INT1_SYM is a 1-bit sign format: the sign grid is stored as a u1 code with a scalar zero point of 0.5
+                and the group's doubled mean absolute weight as the scale, so the weight is (code - 0.5) * 2 * mean|w|.
             NF4 is the same as INT4_SYM mode, but primary precision is NF4 data type without zero point.
             MXFP4 is MX-compliant FP4 with E2M1 values sharing group-level E8M0 scale. The size of group is 32.
             MXFP8_E4M3 is MX-compliant FP8 with E4M3 values sharing group-level E8M0 scale. The size of group is 32.
